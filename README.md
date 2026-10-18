@@ -2,27 +2,29 @@
 
 <div align="center">
 
-![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-18.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-8.3.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-387%20Passed-729B1B?style=for-the-badge&logo=vitest&logoColor=white)
-![E2E](https://img.shields.io/badge/E2E%20Tests-345%20Passed-success?style=for-the-badge&logo=checkmarx&logoColor=white)
-![Architecture](https://img.shields.io/badge/Architecture-Strict%20Monorepo-orange?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+[![CI](https://github.com/Hitotsume-nozo/Lensboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Hitotsume-nozo/Lensboard/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](tsconfig.base.json)
+[![React](https://img.shields.io/badge/React-18.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=black)](package.json)
+[![Vite](https://img.shields.io/badge/Vite-8.3.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)](vite.config.ts)
+[![Vitest](https://img.shields.io/badge/Vitest-387%20Passed-729B1B?style=for-the-badge&logo=vitest&logoColor=white)](vitest.config.ts)
+[![E2E](https://img.shields.io/badge/E2E%20Tests-345%20Passed-success?style=for-the-badge&logo=checkmarx&logoColor=white)](tests/e2e/runner.ts)
+[![Architecture](https://img.shields.io/badge/Architecture-Strict%20Monorepo-orange?style=for-the-badge)](scripts/verify-boundaries.mjs)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 **A high-performance, local-first visual canvas system built for algorithm study, mathematical derivations, software architecture diagramming, and interactive code exploration.**
 
-[Architecture](#-architecture--downward-layering) •
-[Core Features](#-core-features) •
-[Shortcuts Matrix](#-shortcuts-matrix) •
-[Quickstart](#-quickstart) •
-[Testing & Verification](#-testing--verification) •
-[Repository Layout](#-repository-layout)
+[Architecture](#architecture) •
+[Core Features](#features) •
+[Shortcuts Matrix](#shortcuts) •
+[Quickstart](#quickstart) •
+[Testing & Verification](#testing) •
+[Repository Layout](#layout)
 
 </div>
 
 ---
 
+<a id="overview"></a>
 ## 🌟 Overview
 
 **LENSBoard 2.0** reimagines digital canvas workflows by combining high-speed native Canvas 2D dual-layer rendering with a floating React 18 UI chrome, durable SQLite WAL op-log persistence, dual-channel DSA state indicators, mathematical KaTeX derivations, and an integrated TypeScript/JavaScript code runner with full **Neovim modal editing**.
@@ -31,6 +33,7 @@ Built with a zero-compromise architectural discipline, canvas entities are never
 
 ---
 
+<a id="architecture"></a>
 ## 🏛️ Architecture & Downward Layering
 
 LENSBoard enforces a strict **downward-only dependency rule** verified on every build by custom ESLint boundary rules and automated AST tests. Upward and sideways imports between sibling packages are strictly forbidden at compile time.
@@ -75,11 +78,12 @@ LENSBoard enforces a strict **downward-only dependency rule** verified on every 
 
 ---
 
+<a id="features"></a>
 ## ✨ Core Features
 
 ### 🖌️ Advanced Ink Stabilization Pipeline
 - **One-Euro Filter**: Velocity-adaptive low-pass filtering eliminates hand tremor at low speeds while preventing phase lag during rapid gestures.
-- **Lazy-String Stabilizer**: Virtual drag string ($r = \text{percent} \times 0.4\text{px}$) eliminates jittery corners and produces clean mathematical curves.
+- **Lazy-String Stabilizer**: Virtual drag string ($r = \text{percent} \times 0.4\text{ px}$) eliminates jittery corners and produces clean mathematical curves.
 - **Dynamic Velocity-Sensitive Outline**: Powered by `perfect-freehand` with velocity-scaled pressure and 6px smooth tapering.
 - **Modifier Modes**:
   - `Shift`: 45-degree angle snapping for perfectly straight lines and axes.
@@ -131,6 +135,7 @@ Engineered for computer science education and technical interviews:
 
 ---
 
+<a id="shortcuts"></a>
 ## ⌨️ Shortcuts Matrix
 
 LENSBoard includes a centralized shortcut registry (`@lensboard/core`) with built-in duplicate binding collision detection:
@@ -162,6 +167,7 @@ LENSBoard includes a centralized shortcut registry (`@lensboard/core`) with buil
 
 ---
 
+<a id="quickstart"></a>
 ## 🚀 Quickstart
 
 ### Prerequisites
@@ -199,28 +205,32 @@ pnpm dev
 
 ---
 
+<a id="testing"></a>
 ## 🧪 Testing & Verification
 
 The codebase is protected by **732 automated tests** across 5 distinct testing tiers:
 
 ```bash
-# 1. Run full Vitest suite (387 unit & integration tests)
+# 1. Run Complete Verification Gate (build, typecheck, lint, vitest, boundaries, e2e)
+pnpm verify
+
+# 2. Run full Vitest suite (387 unit & integration tests)
 pnpm test
 
-# 2. Run Comprehensive 4-Tier E2E test suite (345 tests)
+# 3. Run Comprehensive 4-Tier E2E test suite (345 tests)
 pnpm test:e2e
 
-# 3. Verify Downward-Only Architectural Boundaries (ESLint AST check)
+# 4. Run test coverage analysis (V8 engine)
+pnpm test:coverage
+
+# 5. Verify Downward-Only Architectural Boundaries (ESLint AST check)
 pnpm test:boundaries
 
-# 4. Check TypeScript types across all workspace packages
+# 6. Check TypeScript types across all workspace packages
 pnpm typecheck
 
-# 5. Lint entire codebase
+# 7. Lint entire codebase
 pnpm lint
-
-# 6. Run complete verification gate (build, typecheck, lint, vitest)
-pnpm verify
 ```
 
 ### Test Suite Structure
@@ -236,10 +246,13 @@ pnpm verify
 
 ---
 
+<a id="layout"></a>
 ## 📁 Repository Layout
 
 ```
 Lensboard/
+├── .github/
+│   └── workflows/      # GitHub Actions CI workflow (verify, test, build)
 ├── packages/
 │   ├── core/           # Pure immutable document model, typed commands & history
 │   ├── render/         # Dual-layer Canvas 2D, rbush spatial index, 1€ ink filter
@@ -258,6 +271,7 @@ Lensboard/
 
 ---
 
+<a id="license"></a>
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

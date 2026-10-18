@@ -21,8 +21,8 @@
     "test:coverage": "vitest run --coverage",
     "test:boundaries": "node scripts/verify-boundaries.mjs",
     "test:e2e": "node tests/e2e/runner.ts",
-    "verify": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test",
-    "verify:npm": "npm run build && npm run typecheck && npm run lint && npm run test",
+    "verify": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run test:boundaries && pnpm run test:e2e",
+    "verify:npm": "npm run build && npm run typecheck && npm run lint && npm run test && npm run test:boundaries && npm run test:e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -34,6 +34,7 @@
     "@typescript-eslint/eslint-plugin": "^8.24.0",
     "@typescript-eslint/parser": "^8.24.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/coverage-v8": "^3.2.7",
     "eslint": "^9.20.1",
     "eslint-import-resolver-typescript": "^3.8.0",
     "eslint-plugin-boundaries": "^7.2.0",

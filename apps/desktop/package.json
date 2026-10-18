@@ -1,0 +1,29 @@
+{
+  "name": "@lensboard/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/main/index.ts",
+  "scripts": {
+    "dev": "electron .",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lensboard/core": "workspace:*",
+    "@lensboard/render": "workspace:*",
+    "@lensboard/storage": "workspace:*",
+    "@lensboard/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "electron": "^34.2.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.5"
+  }
+}

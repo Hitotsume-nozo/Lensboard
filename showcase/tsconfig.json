@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "composite": false,
+    "baseUrl": ".",
+    "paths": {
+      "@lensboard/core": ["../packages/core/src/index.ts"],
+      "@lensboard/render": ["../packages/render/src/index.ts"],
+      "@lensboard/storage": ["../packages/storage/src/index.ts"],
+      "@lensboard/ui": ["../packages/ui/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../packages/render/src/declarations.d.ts"]
+}

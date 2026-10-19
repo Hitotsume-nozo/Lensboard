@@ -143,14 +143,21 @@ export {
 // Shape & Sketch Rendering
 export {
   PEN_COLOR_MAP,
+  HANDWRITING_FONT_FAMILY,
   resolveColor,
+  resolveEntityFont,
+  formatLatexForCanvas,
   renderCanvasObject,
   wrapText,
+  tokenizeCodeForCanvas,
+  wrapCodeTokens,
+  type CodeSyntaxToken,
 } from './shapes/renderer.js';
 
 // Ink Smoothing & Geometric Fitting
 export {
   smoothStrokePoints,
+  smoothStrokePointsFFT,
   detectPrimitiveFromPoints,
   type GeometricCandidate,
 } from './ink/smoothing.js';

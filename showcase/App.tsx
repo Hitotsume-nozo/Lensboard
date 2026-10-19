@@ -411,6 +411,15 @@ export function App() {
   const activeColorHex = getPenColor(activeColorSlot, theme);
   const [focusMode, setFocusMode] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
+  const [handwritingFont, setHandwritingFont] = useState<boolean>(true);
+
+  useEffect(() => {
+    document.documentElement.setAttribute(
+      'data-lb-font',
+      handwritingFont ? 'handwriting' : 'standard'
+    );
+    rendererRef.current?.invalidate?.();
+  }, [handwritingFont]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>('');
 
@@ -1072,8 +1081,8 @@ export function App() {
       obj.type === 'code'
         ? String(obj.data?.code || '')
         : obj.type === 'equation'
-          ? String(obj.data?.equation || '')
-          : obj.type === 'text'
+          ? String(obj.data?.equation || obj.label || '')
+          : obj.type === 'text' || obj.type === 'note'
             ? String(obj.data?.text || obj.label || '')
             : obj.label != null
               ? String(obj.label)
@@ -1088,14 +1097,35 @@ export function App() {
     }
     const obj = docRef.current.objects[editingObjectId];
     pushUndoSnapshot();
+
+    const rawLines = editingValue.split(/\r?\n|\\\\/);
+    const longestLineChars = Math.max(1, ...rawLines.map((l) => l.length));
+
     if (obj.type === 'code') {
       obj.data = { ...obj.data, code: editingValue };
     } else if (obj.type === 'equation') {
       obj.data = { ...obj.data, equation: editingValue };
       obj.label = editingValue;
-    } else if (obj.type === 'text') {
+      const targetW = Math.max(obj.w ?? 200, Math.min(480, longestLineChars * 9.5 + 32));
+      const approxWrappedLines = rawLines.reduce(
+        (acc, line) => acc + Math.max(1, Math.ceil((line.length * 9.5) / Math.max(80, targetW - 24))),
+        0
+      );
+      obj.w = targetW;
+      obj.h = Math.max(obj.h ?? 56, 28 + approxWrappedLines * 24);
+    } else if (obj.type === 'text' || obj.type === 'note') {
       obj.data = { ...obj.data, text: editingValue };
       obj.label = editingValue;
+      const targetW = Math.max(obj.w ?? 160, Math.min(440, longestLineChars * 8.5 + 24));
+      const approxWrappedLines = rawLines.reduce(
+        (acc, line) => acc + Math.max(1, Math.ceil((line.length * 8.5) / Math.max(80, targetW - 20))),
+        0
+      );
+      obj.w = targetW;
+      obj.h = Math.max(
+        obj.h ?? (obj.type === 'note' ? 100 : 40),
+        (obj.type === 'note' ? 36 : 16) + approxWrappedLines * 22
+      );
     } else {
       obj.label = editingValue;
     }
@@ -1306,11 +1336,16 @@ export function App() {
           addToast('No source ink attached to revert', 'info');
         }
       } else if (prop === 'font') {
-        const sizes = [12, 16, 20, 24, 32];
-        const curSize = (obj.data?.fontSize as number) || 16;
-        const nextSize = sizes[(sizes.indexOf(curSize) + 1) % sizes.length];
-        obj.data = { ...obj.data, fontSize: nextSize };
-        addToast(`Font size: ${nextSize}px`, 'info');
+        const curFam =
+          (obj.data?.fontFamily as string) || (handwritingFont ? 'handwriting' : 'standard');
+        const nextFam = curFam === 'handwriting' ? 'standard' : 'handwriting';
+        targetObjs.forEach((o) => {
+          o.data = { ...o.data, fontFamily: nextFam };
+        });
+        addToast(
+          nextFam === 'handwriting' ? 'Font: Caveat Handwriting' : 'Font: Standard',
+          'info'
+        );
       } else if (prop === 'language') {
         const langs = ['typescript', 'python', 'javascript', 'cpp', 'rust'];
         const curLang = (obj.data?.language as string) || 'typescript';
@@ -3530,65 +3565,22 @@ export function App() {
     if (activeTool === 'P') {
       const stroke = renderer.finishLiveStroke();
       if (stroke && stroke.points.length > 0) {
-        // Smooth freehand stroke to eliminate jagged jitter and squeegee artifacts
+        // Smooth freehand stroke via Mirrored Complex FFT low-pass filter
         const smoothedPoints = smoothStrokePoints(stroke.points, 2);
         stroke.points = smoothedPoints;
         stroke.style = {
           ...stroke.style,
           colorId: activeColorSlot,
-          renderMode: stroke.style?.renderMode ?? 'sketch',
-          strokeWidth: 2,
+          renderMode: 'crisp',
+          strokeWidth: stroke.style?.strokeWidth ?? 2.5,
         };
         addObjectToDoc(stroke);
         lastStrokeIdRef.current = stroke.id;
         setActiveCandidateIdx(0);
 
-        // Fast geometric primitive detection (line, box, diamond, circle)
+        // Offer non-destructive SuggestionChips (keys 1 / 2) while keeping smoothed ink stroke intact
         const detected = detectPrimitiveFromPoints(smoothedPoints);
-        if (detected.kind !== 'none' && detected.confidence >= 0.72) {
-          // Automatic fast-transform into clean geometric primitive
-          pushUndoSnapshot();
-          stroke.hidden = true;
-          addObjectToDoc(stroke);
-
-          const shapeType =
-            detected.kind === 'diamond'
-              ? 'diamond'
-              : detected.kind === 'circle'
-                ? 'ellipse'
-                : 'rectangle';
-
-          const newObj = createCanvasObject({
-            id: generateUlid(),
-            type: detected.kind === 'line' ? 'line' : 'shape',
-            x: detected.bounds.x,
-            y: detected.bounds.y,
-            w: detected.bounds.w,
-            h: detected.bounds.h,
-            z: getNextZ(),
-            shapeType: detected.kind === 'line' ? undefined : shapeType,
-            label: detected.label.replace('Recognized ', ''),
-            sourceInk: [stroke.id],
-            data:
-              detected.kind === 'line'
-                ? { x2: detected.bounds.x + detected.bounds.w, y2: detected.bounds.y + detected.bounds.h, arrow: false }
-                : undefined,
-            style: {
-              colorId: activeColorSlot,
-              fill: 'var(--lb-surface)',
-              strokeWidth: 2,
-              renderMode: 'crisp',
-            },
-            tags: ['transformed', detected.kind],
-          });
-
-          addObjectToDoc(newObj);
-          setSelectedObjectId(newObj.id);
-          updateSelectionBoundsFor(newObj);
-          setShowSuggestions(false);
-          addToast(`Auto-transformed into ${newObj.label}`, 'success');
-          return;
-        } else if (detected.kind !== 'none') {
+        if (detected.kind !== 'none') {
           const topLeft = renderer.toScreen({ x: detected.bounds.x, y: detected.bounds.y });
           const botRight = renderer.toScreen({
             x: detected.bounds.x + detected.bounds.w,
@@ -4248,6 +4240,37 @@ export function App() {
               }}
             >
               🔍 Find
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setHandwritingFont((prev) => {
+                  const next = !prev;
+                  addToast(
+                    next ? 'Font: Caveat Handwriting' : 'Font: Standard Sans/Serif',
+                    'info'
+                  );
+                  return next;
+                });
+              }}
+              title="Toggle Caveat Handwriting Font for Text, Notes & Equations"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--lb-border)',
+                backgroundColor: handwritingFont ? 'var(--lb-accent)' : 'var(--lb-surface-raised)',
+                color: handwritingFont ? '#FFFFFF' : 'var(--lb-text)',
+                fontSize: '13px',
+                fontFamily: 'Caveat, cursive',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              ✍️ Caveat
             </button>
 
             <ThemeSwitcherPill
@@ -5132,19 +5155,38 @@ export function App() {
                 marginBottom: '6px',
                 display: 'flex',
                 justifyContent: 'space-between',
+                alignItems: 'center',
                 flexWrap: 'wrap',
                 gap: '4px',
               }}
             >
               <span>Editing: {obj.type.toUpperCase()}</span>
-              <span>Enter to save · Esc to cancel</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>Enter for newline · Ctrl+Enter to save</span>
+                <button
+                  type="button"
+                  onClick={commitInlineEdit}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    backgroundColor: 'var(--lb-accent)',
+                    color: '#FFFFFF',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Save
+                </button>
+              </span>
             </div>
             <textarea
               autoFocus
               value={editingValue}
               onChange={(e) => setEditingValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
                   commitInlineEdit();
                 } else if (e.key === 'Escape') {
@@ -5152,15 +5194,16 @@ export function App() {
                   cancelInlineEdit();
                 }
               }}
-              rows={Math.max(2, editingValue.split('\n').length)}
+              rows={Math.max(3, editingValue.split('\n').length + 1)}
               style={{
                 width: '100%',
                 backgroundColor: 'transparent',
                 color: 'var(--lb-text)',
                 border: 'none',
                 outline: 'none',
-                fontSize: '13px',
-                fontFamily: 'inherit',
+                fontSize: handwritingFont ? '18px' : '13px',
+                fontFamily: handwritingFont ? 'Caveat, cursive' : 'inherit',
+                lineHeight: 1.35,
                 resize: 'both',
                 wordBreak: 'break-word',
                 overflowWrap: 'break-word',

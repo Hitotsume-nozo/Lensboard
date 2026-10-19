@@ -411,8 +411,11 @@ export function RightDrawerTabs({
             </select>
           </div>
 
-          {/* Content Editor for Text / Code / Equation */}
-          {(selectedObject.type === 'text' || selectedObject.type === 'code' || selectedObject.type === 'equation') && (
+          {/* Content Editor for Text / Note / Code / Equation */}
+          {(selectedObject.type === 'text' ||
+            selectedObject.type === 'note' ||
+            selectedObject.type === 'code' ||
+            selectedObject.type === 'equation') && (
             <div>
               <label style={{ fontSize: '11px', color: 'var(--lb-text-muted)', display: 'block', marginBottom: '4px' }}>
                 Content ({selectedObject.type})

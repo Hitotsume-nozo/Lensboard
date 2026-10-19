@@ -46,3 +46,9 @@ Thumbs.db
 .cache/
 .temp/
 .tmp/
+
+# Backups and archives
+*.zip
+*.tar.gz
+lensboard-changes.txt
+

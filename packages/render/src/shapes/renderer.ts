@@ -48,6 +48,104 @@ export function resolveColor(colorId?: PenColorSlot, fallback = '#1C1E26'): stri
   return resolveCssColor(mapped, fallback);
 }
 
+export const HANDWRITING_FONT_FAMILY = 'Caveat, "Segoe Print", cursive';
+
+/**
+ * Resolves whether an object should render with the Caveat handwriting font.
+ */
+export function resolveEntityFont(
+  obj: CanvasObject,
+  defaultFamily: string,
+  baseSizePx: number,
+  options: { bold?: boolean; italic?: boolean } = {}
+): { font: string; lineHeight: number } {
+  const globalHandwriting =
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-lb-font') === 'handwriting';
+  const objFontPref = obj.data?.fontFamily as string | undefined;
+
+  const useHandwriting =
+    objFontPref === 'handwriting' ||
+    (objFontPref === undefined && globalHandwriting) ||
+    obj.style?.renderMode === 'sketch';
+
+  if (useHandwriting) {
+    const scaledSize = Math.round(baseSizePx * 1.22);
+    const weight = options.bold ? '700' : '600';
+    return {
+      font: `${weight} ${scaledSize}px ${HANDWRITING_FONT_FAMILY}`,
+      lineHeight: Math.round(scaledSize * 1.28),
+    };
+  }
+
+  const stylePrefix = `${options.italic ? 'italic ' : ''}${options.bold ? 'bold ' : ''}`;
+  return {
+    font: `${stylePrefix}${baseSizePx}px ${defaultFamily}`,
+    lineHeight: Math.round(baseSizePx * 1.35),
+  };
+}
+
+/**
+ * Normalizes LaTeX line breaks (\\, \newline, \cr) into '\n' and converts common
+ * KaTeX/LaTeX commands into readable Unicode math symbols for Canvas 2D rendering.
+ */
+export function formatLatexForCanvas(raw: string): string {
+  if (!raw) return '';
+  return String(raw)
+    .replace(/\\begin\{(aligned|align\*?|gathered|gather\*?|cases|array)\}/g, '')
+    .replace(/\\end\{(aligned|align\*?|gathered|gather\*?|cases|array)\}/g, '')
+    .replace(/\\\\|\\newline|\\cr/g, '\n')
+    .replace(/&=/g, '= ')
+    .replace(/&/g, ' ')
+    .replace(/\\text\{([^}]*)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+    .replace(/\\mathbf\{([^}]*)\}/g, '$1')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)')
+    .replace(/\\sqrt\{([^}]*)\}/g, '√($1)')
+    .replace(/\\sum/g, '∑')
+    .replace(/\\prod/g, '∏')
+    .replace(/\\int/g, '∫')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\nabla/g, '∇')
+    .replace(/\\partial/g, '∂')
+    .replace(/\\mathbb\{R\}/g, 'ℝ')
+    .replace(/\\mathbb\{E\}/g, '𝔼')
+    .replace(/\\mathbb\{N\}/g, 'ℕ')
+    .replace(/\\mathbb\{Z\}/g, 'ℤ')
+    .replace(/\\in/g, '∈')
+    .replace(/\\notin/g, '∉')
+    .replace(/\\subset/g, '⊂')
+    .replace(/\\subseteq/g, '⊆')
+    .replace(/\\le|\\leq/g, '≤')
+    .replace(/\\ge|\\geq/g, '≥')
+    .replace(/\\ne|\\neq/g, '≠')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\equiv/g, '≡')
+    .replace(/\\to|\\rightarrow/g, '→')
+    .replace(/\\leftarrow/g, '←')
+    .replace(/\\Rightarrow/g, '⇒')
+    .replace(/\\iff|\\Leftrightarrow/g, '⇔')
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\pm/g, '±')
+    .replace(/\\alpha/g, 'α')
+    .replace(/\\beta/g, 'β')
+    .replace(/\\gamma/g, 'γ')
+    .replace(/\\delta/g, 'δ')
+    .replace(/\\epsilon|\\varepsilon/g, 'ε')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\lambda/g, 'λ')
+    .replace(/\\mu/g, 'μ')
+    .replace(/\\pi/g, 'π')
+    .replace(/\\sigma/g, 'σ')
+    .replace(/\\tau/g, 'τ')
+    .replace(/\\phi|\\varphi/g, 'φ')
+    .replace(/\\omega/g, 'ω')
+    .replace(/\\Delta/g, 'Δ')
+    .replace(/\\Sigma/g, 'Σ')
+    .replace(/\\Omega/g, 'Ω');
+}
+
 /**
  * Wraps text into lines that fit within maxWidth using canvas measureText.
  * Handles newlines and breaks long continuous words gracefully.
@@ -112,6 +210,100 @@ export function wrapText(
   }
 
   return lines;
+}
+
+export interface CodeSyntaxToken {
+  text: string;
+  color: string;
+}
+
+/**
+ * Tokenizes a line of code into syntax highlighting tokens with theme-aligned colors.
+ */
+export function tokenizeCodeForCanvas(line: string): CodeSyntaxToken[] {
+  if (!line) return [];
+  const tokenRegex =
+    /(\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b(?:const|let|var|function|return|if|else|for|while|import|export|from|class|type|interface|extends|implements|async|await|new|typeof|instanceof|try|catch|finally|throw|switch|case|default|break|continue|void|def|self|None|True|False|elif|in|is|not|with|as|lambda|yield)\b)|(\b(?:number|string|boolean|any|unknown|never|Record|Array|Map|Set|List|Optional|Dict|Tuple|int|float|str|bool)\b)|(\b\d+(?:\.\d+)?\b)|(\b(?:true|false|null|undefined)\b)|([a-zA-Z_$][a-zA-Z0-9_$]*(?=\s*\())|([{}()[\];,+\-*/%=<>!&|^~?:])/g;
+
+  let lastIndex = 0;
+  const tokens: CodeSyntaxToken[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      tokens.push({ text: line.slice(lastIndex, match.index), color: '#C0CAF5' });
+    }
+    const [full, comment, str, kw, typeKw, num, bool, fnName, punct] = match;
+    if (comment) tokens.push({ text: comment, color: '#565F89' });
+    else if (str) tokens.push({ text: str, color: '#9ECE6A' });
+    else if (kw) tokens.push({ text: kw, color: '#BB9AF7' });
+    else if (typeKw) tokens.push({ text: typeKw, color: '#7AA2F7' });
+    else if (num || bool) tokens.push({ text: num || bool, color: '#FF9E64' });
+    else if (fnName) tokens.push({ text: fnName, color: '#7DCFFF' });
+    else if (punct) tokens.push({ text: punct, color: '#89DDFF' });
+    lastIndex = match.index + full.length;
+  }
+  if (lastIndex < line.length) {
+    tokens.push({ text: line.slice(lastIndex), color: '#C0CAF5' });
+  }
+  return tokens;
+}
+
+/**
+ * Wraps code tokens within maxWidth, splitting lines and oversized tokens without leaking.
+ */
+export function wrapCodeTokens(
+  ctx: CanvasRenderingContext2D,
+  rawLines: string[],
+  maxWidth: number
+): CodeSyntaxToken[][] {
+  const wrapped: CodeSyntaxToken[][] = [];
+  for (const rawLine of rawLines) {
+    if (!rawLine) {
+      wrapped.push([]);
+      continue;
+    }
+    const tokens = tokenizeCodeForCanvas(rawLine);
+    let curLine: CodeSyntaxToken[] = [];
+    let curWidth = 0;
+
+    for (const tok of tokens) {
+      const tokWidth = ctx.measureText(tok.text).width;
+      if (curWidth + tokWidth <= maxWidth) {
+        curLine.push(tok);
+        curWidth += tokWidth;
+      } else {
+        if (curLine.length > 0) {
+          wrapped.push(curLine);
+          curLine = [];
+          curWidth = 0;
+        }
+        if (tokWidth > maxWidth) {
+          let chunk = '';
+          for (const ch of tok.text) {
+            const chWidth = ctx.measureText(chunk + ch).width;
+            if (chWidth <= maxWidth) {
+              chunk += ch;
+            } else {
+              if (chunk) wrapped.push([{ text: chunk, color: tok.color }]);
+              chunk = ch;
+            }
+          }
+          if (chunk) {
+            curLine = [{ text: chunk, color: tok.color }];
+            curWidth = ctx.measureText(chunk).width;
+          }
+        } else {
+          curLine.push(tok);
+          curWidth = tokWidth;
+        }
+      }
+    }
+    if (curLine.length > 0) {
+      wrapped.push(curLine);
+    }
+  }
+  return wrapped;
 }
 
 const roughGenerator = rough.generator();
@@ -210,12 +402,12 @@ export function renderCanvasObject(
         if (points.length > 0) {
           const outline = generateStrokeOutline(points, {
             size: strokeWidth,
-            thinning: 0.12,
-            smoothing: 0.7,
-            streamline: 0.6,
+            thinning: 0,
+            smoothing: 0.85,
+            streamline: 0.7,
             simulatePressure: false,
-            startTaper: 3,
-            endTaper: 3,
+            startTaper: 0,
+            endTaper: 0,
           });
           drawStrokeToContext(ctx, outline, strokeColor);
         }
@@ -365,52 +557,100 @@ export function renderCanvasObject(
               ? obj.label
               : 'Text';
         const fontSize = (obj.data?.fontSize as number) || 16;
+        const { font, lineHeight } = resolveEntityFont(
+          obj,
+          'Inter, -apple-system, sans-serif',
+          fontSize
+        );
         ctx.save();
+        ctx.font = font;
+        const maxTextW = Math.max(20, width - 12);
+        const lines = wrapText(ctx, textContent, maxTextW);
+        const effectiveH = Math.max(height, lines.length * lineHeight + 12);
+        if (effectiveH > height) {
+          obj.h = effectiveH;
+        }
         if (obj.style?.fill && obj.style.fill !== 'transparent') {
           ctx.fillStyle = resolveCssColor(obj.style.fill);
-          ctx.fillRect(obj.x, obj.y, width, height);
+          ctx.fillRect(obj.x, obj.y, width, effectiveH);
         }
-        ctx.font = `${fontSize}px Inter, -apple-system, sans-serif`;
         ctx.fillStyle = strokeColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        const maxTextW = Math.max(20, width - 8);
-        const lines = wrapText(ctx, textContent, maxTextW);
-        const lineHeight = fontSize * 1.3;
         for (let i = 0; i < lines.length; i++) {
-          ctx.fillText(lines[i], obj.x + 4, obj.y + 4 + i * lineHeight);
+          ctx.fillText(lines[i], obj.x + 6, obj.y + 6 + i * lineHeight);
         }
         ctx.restore();
         break;
       }
 
       case 'equation': {
-        const eqText: string =
+        const rawEqText: string =
           typeof obj.data?.equation === 'string'
             ? obj.data.equation
             : typeof obj.label === 'string'
               ? obj.label
               : 'f(x) = y';
+        const formattedEq = formatLatexForCanvas(rawEqText);
+        const fontSize = (obj.data?.fontSize as number) || 15;
+        const { font, lineHeight } = resolveEntityFont(
+          obj,
+          '"Times New Roman", Georgia, serif',
+          fontSize,
+          { italic: true }
+        );
+
         ctx.save();
+        ctx.font = font;
+        const paddingX = 12;
+        const headerH = 20;
+        const maxEqW = Math.max(40, width - paddingX * 2);
+        const lines = wrapText(ctx, formattedEq, maxEqW);
+
+        const contentH = Math.max(36, lines.length * lineHeight + 16);
+        const effectiveH = Math.max(height, headerH + contentH);
+        if (effectiveH > height) {
+          obj.h = effectiveH;
+        }
+
         ctx.fillStyle = resolveCssColor(obj.style?.fill, 'rgba(30, 36, 54, 0.85)');
-        ctx.fillRect(obj.x, obj.y, width, height);
+        ctx.fillRect(obj.x, obj.y, width, effectiveH);
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
-        ctx.strokeRect(obj.x, obj.y, width, height);
+        ctx.strokeRect(obj.x, obj.y, width, effectiveH);
 
         ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
-        ctx.fillRect(obj.x, obj.y, width, 18);
+        ctx.fillRect(obj.x, obj.y, width, headerH);
         ctx.font = 'bold 9px sans-serif';
         ctx.fillStyle = strokeColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText('∑ KaTeX Equation', obj.x + 8, obj.y + 9);
+        ctx.fillText('∑ KaTeX Equation', obj.x + 8, obj.y + headerH / 2);
 
-        ctx.font = 'italic 15px "Times New Roman", Georgia, serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.beginPath();
+        ctx.rect(
+          obj.x + 2,
+          obj.y + headerH,
+          Math.max(1, width - 4),
+          Math.max(1, effectiveH - headerH - 2)
+        );
+        ctx.clip();
+
+        ctx.font = font;
         ctx.fillStyle = '#E2E8F0';
-        ctx.fillText(eqText, obj.x + width / 2, obj.y + height / 2 + 6);
+        const isMultiLine = lines.length > 1;
+        ctx.textAlign = isMultiLine ? 'left' : 'center';
+        ctx.textBaseline = 'top';
+
+        const totalTextH = lines.length * lineHeight;
+        const bodyTop = obj.y + headerH;
+        const bodyAvailH = effectiveH - headerH;
+        const startY = bodyTop + Math.max(6, (bodyAvailH - totalTextH) / 2);
+
+        for (let i = 0; i < lines.length; i++) {
+          const drawX = isMultiLine ? obj.x + paddingX : obj.x + width / 2;
+          ctx.fillText(lines[i], drawX, startY + i * lineHeight);
+        }
         ctx.restore();
         break;
       }
@@ -428,14 +668,30 @@ export function renderCanvasObject(
           | undefined;
 
         ctx.save();
+        ctx.font = '12px "Fira Code", Menlo, Monaco, Consolas, monospace';
+        const paddingX = 10;
+        const headerH = 22;
+        const maxCodeW = Math.max(30, width - paddingX * 2);
+        const codeLines = codeText.split('\n');
+        const wrappedLines = wrapCodeTokens(ctx, codeLines, maxCodeW);
+
+        const lineHeight = 16;
+        const outH = output ? Math.max(36, Math.min(64, height * 0.38)) : 0;
+        const requiredContentH = wrappedLines.length * lineHeight + 12;
+        const effectiveH = Math.max(height, headerH + requiredContentH + outH);
+        if (effectiveH > height) {
+          obj.h = effectiveH;
+        }
+
         ctx.fillStyle = resolveCssColor(obj.style?.fill, 'rgba(21, 24, 35, 0.95)');
-        ctx.fillRect(obj.x, obj.y, width, height);
+        ctx.fillRect(obj.x, obj.y, width, effectiveH);
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
-        ctx.strokeRect(obj.x, obj.y, width, height);
+        ctx.strokeRect(obj.x, obj.y, width, effectiveH);
 
+        // Header bar with window control dots
         ctx.fillStyle = 'rgba(35, 40, 58, 0.9)';
-        ctx.fillRect(obj.x, obj.y, width, 22);
+        ctx.fillRect(obj.x, obj.y, width, headerH);
 
         ctx.fillStyle = '#EF4444';
         ctx.beginPath();
@@ -456,20 +712,37 @@ export function renderCanvasObject(
         ctx.textBaseline = 'middle';
         ctx.fillText(lang.toUpperCase(), obj.x + width - 8, obj.y + 11);
 
-        ctx.font = '12px "Fira Code", monospace';
-        ctx.fillStyle = '#E2E8F0';
+        // Clip code content area so text NEVER escapes bounding box
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(
+          obj.x + 2,
+          obj.y + headerH,
+          Math.max(1, width - 4),
+          Math.max(1, effectiveH - headerH - outH - 2)
+        );
+        ctx.clip();
+
+        ctx.font = '12px "Fira Code", Menlo, Monaco, Consolas, monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        const codeLines = codeText.split('\n');
-        const maxCodeLines = output ? Math.min(6, codeLines.length) : Math.min(10, codeLines.length);
-        for (let i = 0; i < maxCodeLines; i++) {
-          ctx.fillText(codeLines[i], obj.x + 10, obj.y + 28 + i * 16);
+
+        const maxVisibleLines = Math.floor((effectiveH - headerH - outH - 8) / lineHeight);
+        const linesToDraw = Math.min(wrappedLines.length, maxVisibleLines);
+        for (let i = 0; i < linesToDraw; i++) {
+          let curX = obj.x + paddingX;
+          const curY = obj.y + headerH + 6 + i * lineHeight;
+          for (const tok of wrappedLines[i]) {
+            ctx.fillStyle = tok.color;
+            ctx.fillText(tok.text, curX, curY);
+            curX += ctx.measureText(tok.text).width;
+          }
         }
+        ctx.restore(); // restore clip
 
         // Render embedded output window if execution output is present
         if (output) {
-          const outH = Math.max(36, Math.min(64, height * 0.38));
-          const outY = obj.y + height - outH;
+          const outY = obj.y + effectiveH - outH;
           ctx.fillStyle = 'rgba(11, 14, 23, 0.96)';
           ctx.fillRect(obj.x, outY, width, outH);
           ctx.strokeStyle = output.success === false ? '#EF4444' : '#10B981';
@@ -549,31 +822,52 @@ export function renderCanvasObject(
             : typeof obj.label === 'string'
               ? obj.label
               : 'Note';
+        const fontSize = (obj.data?.fontSize as number) || 13;
+        const { font, lineHeight } = resolveEntityFont(
+          obj,
+          'Inter, -apple-system, sans-serif',
+          fontSize
+        );
+        ctx.font = font;
+        const maxTextW = Math.max(30, width - 16);
+        const lines = wrapText(ctx, noteText, maxTextW);
+        const headerH = 22;
+        const effectiveH = Math.max(height, headerH + lines.length * lineHeight + 14);
+        if (effectiveH > height) {
+          obj.h = effectiveH;
+        }
+
         ctx.fillStyle = resolveCssColor(obj.style?.fill, 'rgba(251, 191, 36, 0.15)');
-        ctx.fillRect(obj.x, obj.y, width, height);
+        ctx.fillRect(obj.x, obj.y, width, effectiveH);
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
-        ctx.strokeRect(obj.x, obj.y, width, height);
+        ctx.strokeRect(obj.x, obj.y, width, effectiveH);
 
         // Header bar with pin
         ctx.fillStyle = 'rgba(245, 158, 11, 0.25)';
-        ctx.fillRect(obj.x, obj.y, width, 22);
+        ctx.fillRect(obj.x, obj.y, width, headerH);
         ctx.font = 'bold 11px Inter, sans-serif';
         ctx.fillStyle = strokeColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText('📌 Note', obj.x + 8, obj.y + 11);
 
-        // Content with word wrap
-        ctx.font = '12px Inter, -apple-system, sans-serif';
+        // Content with word wrap & intentional newline preservation
+        ctx.beginPath();
+        ctx.rect(
+          obj.x + 2,
+          obj.y + headerH,
+          Math.max(1, width - 4),
+          Math.max(1, effectiveH - headerH - 2)
+        );
+        ctx.clip();
+
+        ctx.font = font;
         ctx.fillStyle = strokeColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        const maxTextW = Math.max(30, width - 16);
-        const lines = wrapText(ctx, noteText, maxTextW);
-        const maxLines = Math.max(1, Math.floor((height - 32) / 16));
-        for (let i = 0; i < lines.length && i < maxLines; i++) {
-          ctx.fillText(lines[i], obj.x + 8, obj.y + 28 + i * 16);
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], obj.x + 8, obj.y + 28 + i * lineHeight);
         }
         ctx.restore();
         break;

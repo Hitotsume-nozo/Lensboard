@@ -22,6 +22,9 @@ export function getPropertiesForType(type: string | string[]): string[] {
     case 'code':
       return ['language', 'run', 'testTable', 'note'];
     case 'text':
+    case 'equation':
+    case 'note':
+    case 'derivation':
       return ['color', 'font', 'align', 'delete', 'note'];
     default:
       return ['color', 'note'];

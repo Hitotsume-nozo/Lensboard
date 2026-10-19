@@ -3,6 +3,8 @@ import {
   resolveColor,
   renderCanvasObject,
   wrapText,
+  tokenizeCodeForCanvas,
+  wrapCodeTokens,
   PEN_COLOR_MAP,
 } from './renderer.js';
 import { HeadlessCanvasAdapter } from '../canvas/adapter.js';
@@ -262,6 +264,25 @@ describe('Shapes and Sketch Renderer', () => {
     };
 
     renderCanvasObject(ctx, codeWithOutput, 1.0);
+  });
+
+  it('tokenizes code lines with distinct syntax token colors for canvas rendering', () => {
+    const tokens = tokenizeCodeForCanvas('function solve(arr: number[]): number { return 42; }');
+    expect(tokens.length).toBeGreaterThan(5);
+    const kwToken = tokens.find((t) => t.text === 'function');
+    expect(kwToken?.color).toBe('#BB9AF7');
+    const fnToken = tokens.find((t) => t.text === 'solve');
+    expect(fnToken?.color).toBe('#7DCFFF');
+    const numToken = tokens.find((t) => t.text === '42');
+    expect(numToken?.color).toBe('#FF9E64');
+  });
+
+  it('wrapCodeTokens wraps long code lines within maxWidth without leaking bounds', () => {
+    const adapter = new HeadlessCanvasAdapter(400, 300);
+    const ctx = adapter.getContext()!;
+    const longLine = 'const veryLongVariableNameExceedingLineLimit = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];';
+    const wrapped = wrapCodeTokens(ctx, [longLine], 100);
+    expect(wrapped.length).toBeGreaterThan(1);
   });
 
   it('wrapText splits unbroken words longer than maxWidth into chunks', () => {

@@ -14,8 +14,160 @@ export interface GeometricCandidate {
 }
 
 /**
- * Applies multi-pass Chaikin corner-cutting and Catmull-Rom interpolation
- * to eliminate jitter and squeegee artifacts, producing silky-smooth curves.
+ * Resamples a stroke to `targetCount` uniformly spaced points along its arc length.
+ * Uniform spatial sampling is required before running a spatial FFT.
+ */
+function resampleUniformArcLength(points: StrokePoint[], targetCount: number): StrokePoint[] {
+  if (points.length <= 2 || targetCount <= 2) return [...points];
+
+  const cumDist = new Float64Array(points.length);
+  cumDist[0] = 0;
+  for (let i = 1; i < points.length; i++) {
+    cumDist[i] =
+      cumDist[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+
+  const totalLength = cumDist[points.length - 1];
+  if (totalLength < 1e-3) return [...points];
+
+  const step = totalLength / (targetCount - 1);
+  const resampled: StrokePoint[] = [{ ...points[0] }];
+  let segIdx = 0;
+
+  for (let i = 1; i < targetCount - 1; i++) {
+    const targetD = i * step;
+    while (segIdx < points.length - 2 && cumDist[segIdx + 1] < targetD) {
+      segIdx++;
+    }
+    const segLen = cumDist[segIdx + 1] - cumDist[segIdx];
+    const alpha = segLen > 0 ? (targetD - cumDist[segIdx]) / segLen : 0;
+    const p0 = points[segIdx];
+    const p1 = points[segIdx + 1];
+    resampled.push({
+      x: p0.x + alpha * (p1.x - p0.x),
+      y: p0.y + alpha * (p1.y - p0.y),
+      t: Math.round(p0.t + alpha * (p1.t - p0.t)),
+    });
+  }
+
+  resampled.push({ ...points[points.length - 1] });
+  return resampled;
+}
+
+/**
+ * In-place Radix-2 Cooley-Tukey FFT / IFFT on complex arrays (re + i*im).
+ */
+function fftRadix2(re: Float64Array, im: Float64Array, invert: boolean): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) {
+      j ^= bit;
+    }
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      const ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
+    }
+  }
+
+  for (let len = 2; len <= n; len <<= 1) {
+    const halfLen = len >> 1;
+    const angle = ((2 * Math.PI) / len) * (invert ? 1 : -1);
+    const wlenRe = Math.cos(angle);
+    const wlenIm = Math.sin(angle);
+
+    for (let i = 0; i < n; i += len) {
+      let wRe = 1;
+      let wIm = 0;
+      for (let j = 0; j < halfLen; j++) {
+        const uRe = re[i + j];
+        const uIm = im[i + j];
+        const vRe = re[i + j + halfLen] * wRe - im[i + j + halfLen] * wIm;
+        const vIm = re[i + j + halfLen] * wIm + im[i + j + halfLen] * wRe;
+
+        re[i + j] = uRe + vRe;
+        im[i + j] = uIm + vIm;
+        re[i + j + halfLen] = uRe - vRe;
+        im[i + j + halfLen] = uIm - vIm;
+
+        const nextWRe = wRe * wlenRe - wIm * wlenIm;
+        wIm = wRe * wlenIm + wIm * wlenRe;
+        wRe = nextWRe;
+      }
+    }
+  }
+
+  if (invert) {
+    for (let i = 0; i < n; i++) {
+      re[i] /= n;
+      im[i] /= n;
+    }
+  }
+}
+
+/**
+ * Smooths a 2D stroke in the frequency domain using a Mirror-Padded Complex FFT
+ * with a Gaussian low-pass roll-off window.
+ */
+export function smoothStrokePointsFFT(
+  points: StrokePoint[],
+  cutoffRatio = 0.16
+): StrokePoint[] {
+  if (points.length <= 3) {
+    return [...points];
+  }
+
+  const minSamples = Math.max(32, points.length * 2);
+  const M = Math.min(512, Math.pow(2, Math.ceil(Math.log2(minSamples))));
+  const uniform = resampleUniformArcLength(points, M);
+
+  // Mirror-pad to N = 2*M to eliminate periodic boundary discontinuity
+  const N = M * 2;
+  const re = new Float64Array(N);
+  const im = new Float64Array(N);
+
+  for (let i = 0; i < M; i++) {
+    re[i] = uniform[i].x;
+    im[i] = uniform[i].y;
+    re[N - 1 - i] = uniform[i].x;
+    im[N - 1 - i] = uniform[i].y;
+  }
+
+  fftRadix2(re, im, false);
+
+  const clampedCutoff = Math.max(0.05, Math.min(0.5, cutoffRatio));
+  const sigma = Math.max(2, (N / 2) * clampedCutoff);
+  for (let k = 1; k < N; k++) {
+    const freq = k <= N / 2 ? k : N - k;
+    const weight = Math.exp(-0.5 * (freq / sigma) * (freq / sigma));
+    re[k] *= weight;
+    im[k] *= weight;
+  }
+
+  fftRadix2(re, im, true);
+
+  const result: StrokePoint[] = new Array(M);
+  for (let i = 0; i < M; i++) {
+    result[i] = {
+      x: re[i],
+      y: im[i],
+      t: uniform[i].t,
+    };
+  }
+  result[0] = { ...points[0] };
+  result[M - 1] = { ...points[points.length - 1] };
+
+  return result;
+}
+
+/**
+ * Applies micro-jitter deduplication, Mirrored Complex FFT low-pass filtering,
+ * and Chaikin refinement to eliminate hand shake and produce uniform curves.
  */
 export function smoothStrokePoints(
   points: StrokePoint[],
@@ -40,29 +192,31 @@ export function smoothStrokePoints(
     return deduped;
   }
 
-  // 2. Chaikin algorithm for curve refinement
+  // 2. Run FFT spectral low-pass smoothing when stroke has >= 4 points
+  if (deduped.length >= 4) {
+    const cutoff = iterations >= 3 ? 0.12 : iterations === 2 ? 0.16 : 0.24;
+    return smoothStrokePointsFFT(deduped, cutoff);
+  }
+
+  // 3. Fallback Chaikin for 3-point short segments
   let current = deduped;
   for (let it = 0; it < iterations; it++) {
     const next: StrokePoint[] = [current[0]];
     for (let i = 0; i < current.length - 1; i++) {
       const p0 = current[i];
       const p1 = current[i + 1];
-
-      // Q = 0.75 * p0 + 0.25 * p1
-      const q: StrokePoint = {
-        x: 0.75 * p0.x + 0.25 * p1.x,
-        y: 0.75 * p0.y + 0.25 * p1.y,
-        t: Math.round(0.75 * p0.t + 0.25 * p1.t),
-      };
-
-      // R = 0.25 * p0 + 0.75 * p1
-      const r: StrokePoint = {
-        x: 0.25 * p0.x + 0.75 * p1.x,
-        y: 0.25 * p0.y + 0.75 * p1.y,
-        t: Math.round(0.25 * p0.t + 0.75 * p1.t),
-      };
-
-      next.push(q, r);
+      next.push(
+        {
+          x: 0.75 * p0.x + 0.25 * p1.x,
+          y: 0.75 * p0.y + 0.25 * p1.y,
+          t: Math.round(0.75 * p0.t + 0.25 * p1.t),
+        },
+        {
+          x: 0.25 * p0.x + 0.75 * p1.x,
+          y: 0.25 * p0.y + 0.75 * p1.y,
+          t: Math.round(0.25 * p0.t + 0.75 * p1.t),
+        }
+      );
     }
     next.push(current[current.length - 1]);
     current = next;
